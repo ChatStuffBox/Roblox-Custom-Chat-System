@@ -1,0 +1,341 @@
+-- CLIENT SCRIPT (MasterChatClient)
+-- Place inside: StarterPlayer > StarterPlayerScripts
+
+local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local TextService = game:GetService("TextService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+-- 1. FORCE DISABLE DEFAULT CHAT
+task.spawn(function()
+	for i = 1, 10 do
+		pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false) end)
+		task.wait(0.5)
+	end
+end)
+
+-- 2. VARIABLES & CONFIG
+local Player = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local Remote = ReplicatedStorage:WaitForChild("ChatLink_Secure", 30)
+
+if not Remote then return end 
+
+local activeBubbles = {}
+local playerColors = {} 
+local MAX_BUBBLES = 3
+
+-- DISTANCE SETTINGS
+local DIST_FULL = 25   
+local DIST_DOTS = 65   
+local BUBBLE_PADDING_PX = 8
+
+-- 3. HELPER: RANDOM COLOR (Reset on Rejoin)
+local function getPlayerColor(userId)
+	if not playerColors[userId] then
+		local r = Random.new() 
+		playerColors[userId] = Color3.fromHSV(r:NextNumber(), 0.65, 1)
+	end
+	return playerColors[userId]
+end
+
+Players.PlayerRemoving:Connect(function(p)
+	playerColors[p.UserId] = nil
+end)
+
+-- 4. UI SETUP
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CustomChatUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true 
+ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+
+-- [CHAT BUTTON]
+local ToggleBtn = Instance.new("ImageButton", ScreenGui)
+ToggleBtn.Name = "ToggleChat"
+ToggleBtn.Size = UDim2.new(0, 32, 0, 32)
+ToggleBtn.Position = UDim2.new(0, 138, 0, 16) 
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ToggleBtn.BackgroundTransparency = 0.2
+ToggleBtn.Image = "rbxassetid://14376097365" 
+ToggleBtn.ImageColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 8)
+
+-- [CHAT WINDOW]
+local ChatFrame = Instance.new("Frame", ScreenGui)
+ChatFrame.Name = "ChatWindow"
+ChatFrame.Size = UDim2.new(0, 300, 0, 220)
+ChatFrame.Position = UDim2.new(0, 12, 0, 50) 
+ChatFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ChatFrame.BackgroundTransparency = 0.3
+ChatFrame.Visible = true
+Instance.new("UICorner", ChatFrame)
+
+-- Messages List
+local Messages = Instance.new("ScrollingFrame", ChatFrame)
+Messages.Size = UDim2.new(1, -14, 1, -50)
+Messages.Position = UDim2.new(0, 7, 0, 7)
+Messages.BackgroundTransparency = 1
+Messages.ScrollBarThickness = 4
+Messages.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Messages.CanvasSize = UDim2.new(0,0,0,0)
+Instance.new("UIListLayout", Messages).Padding = UDim.new(0, 4)
+
+-- Input Container
+local InputContainer = Instance.new("Frame", ChatFrame)
+InputContainer.Size = UDim2.new(1, -14, 0, 35)
+InputContainer.Position = UDim2.new(0, 7, 1, -42)
+InputContainer.BackgroundTransparency = 1
+InputContainer.ClipsDescendants = true 
+
+-- Text Input
+local InputBox = Instance.new("TextBox", InputContainer)
+InputBox.Size = UDim2.new(0.82, -4, 1, 0)
+InputBox.Position = UDim2.new(0, 0, 0, 0)
+InputBox.BackgroundColor3 = Color3.new(0,0,0)
+InputBox.BackgroundTransparency = 0.5
+InputBox.TextColor3 = Color3.new(1,1,1)
+InputBox.Font = Enum.Font.Gotham
+InputBox.TextSize = 14
+InputBox.Text = ""
+InputBox.PlaceholderText = "Click here or press / to chat"
+InputBox.TextXAlignment = Enum.TextXAlignment.Left
+
+-- [FIX] DISABLE WRAPPING SO IT SCROLLS HORIZONTALLY
+InputBox.TextWrapped = false 
+InputBox.ClipsDescendants = true
+InputBox.ClearTextOnFocus = false
+
+Instance.new("UICorner", InputBox)
+Instance.new("UIPadding", InputBox).PaddingLeft = UDim.new(0, 8)
+
+-- [SEND BUTTON - IMAGE ICON]
+local SendBtn = Instance.new("ImageButton", InputContainer)
+SendBtn.Size = UDim2.new(0.18, 0, 1, 0)
+SendBtn.Position = UDim2.new(0.82, 4, 0, 0)
+SendBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+SendBtn.Image = "rbxassetid://128300229643801" 
+SendBtn.ImageColor3 = Color3.new(255, 255, 255)
+SendBtn.ScaleType = Enum.ScaleType.Fit
+Instance.new("UICorner", SendBtn)
+Instance.new("UIPadding", SendBtn).PaddingTop = UDim.new(0,6)
+Instance.new("UIPadding", SendBtn).PaddingBottom = UDim.new(0,6)
+Instance.new("UIPadding", SendBtn).PaddingLeft = UDim.new(0,6)
+Instance.new("UIPadding", SendBtn).PaddingRight = UDim.new(0,6)
+
+
+-- 5. BUBBLE LOGIC
+local function createBubble(senderName, text)
+	local sPlayer = Players:FindFirstChild(senderName)
+	if not sPlayer or not sPlayer.Character then return end
+	local head = sPlayer.Character:FindFirstChild("Head")
+	if not head then return end
+
+	local uid = sPlayer.UserId
+	if not activeBubbles[uid] then activeBubbles[uid] = {} end
+
+	if #activeBubbles[uid] >= MAX_BUBBLES then
+		local old = table.remove(activeBubbles[uid], 1)
+		if old then old:Destroy() end
+	end
+
+	-- 1. CALCULATE SIZE
+	local MAX_WIDTH = 250
+	local PADDING_X = 30
+	local PADDING_Y = 24
+	local FONT_SIZE = 18
+	local FONT = Enum.Font.GothamMedium
+
+	local bounds = TextService:GetTextSize(text, FONT_SIZE, FONT, Vector2.new(MAX_WIDTH - PADDING_X, 10000))
+	local finalWidth = math.min(math.max(bounds.X + PADDING_X, 60), MAX_WIDTH)
+	local finalHeight = bounds.Y + PADDING_Y
+
+	-- 2. CREATE BILLBOARD
+	local bGui = Instance.new("BillboardGui", ScreenGui)
+	bGui.Name = "ChatBubble"
+	bGui.Adornee = head
+	bGui.Size = UDim2.new(0, finalWidth, 0, finalHeight) 
+	bGui.StudsOffset = Vector3.new(0, 2.5, 0)
+	bGui.AlwaysOnTop = true
+
+	bGui:SetAttribute("OriginalWidth", finalWidth)
+	bGui:SetAttribute("OriginalHeight", finalHeight)
+	bGui:SetAttribute("FullText", text)
+
+	table.insert(activeBubbles[uid], bGui)
+
+	local frame = Instance.new("Frame", bGui)
+	frame.Name = "Frame"
+	frame.BackgroundColor3 = Color3.new(1,1,1)
+	frame.Size = UDim2.new(1, 0, 1, 0) 
+	Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+	local tail = Instance.new("Frame", frame)
+	tail.BackgroundColor3 = Color3.new(1,1,1)
+	tail.Size = UDim2.new(0, 12, 0, 12) 
+	tail.Rotation = 45
+	tail.AnchorPoint = Vector2.new(0.5, 0.5)
+	tail.Position = UDim2.new(0.5, 0, 1, -2)
+	tail.BorderSizePixel = 0
+	tail.ZIndex = frame.ZIndex - 1
+
+	local label = Instance.new("TextLabel", frame)
+	label.Name = "TextLabel"
+	label.BackgroundTransparency = 1
+	label.TextColor3 = Color3.new(0,0,0)
+	label.TextScaled = false
+	label.TextWrapped = true
+	label.TextSize = FONT_SIZE
+	label.Font = FONT
+	label.Text = text
+	label.Size = UDim2.new(1, 0, 1, 0)
+
+	Instance.new("UIPadding", frame).PaddingTop = UDim.new(0, 8)
+	Instance.new("UIPadding", frame).PaddingBottom = UDim.new(0, 8)
+	Instance.new("UIPadding", frame).PaddingLeft = UDim.new(0, 12)
+	Instance.new("UIPadding", frame).PaddingRight = UDim.new(0, 12)
+
+	-- ENTER ANIMATION
+	local scale = Instance.new("UIScale", frame)
+	scale.Scale = 0
+	TweenService:Create(scale, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Scale = 1}):Play()
+
+	-- EXIT ANIMATION (Float Up)
+	task.delay(6, function()
+		if bGui and bGui.Parent then 
+			local idx = table.find(activeBubbles[uid], bGui)
+			if idx then table.remove(activeBubbles[uid], idx) end
+
+			local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			TweenService:Create(bGui, tweenInfo, {StudsOffset = bGui.StudsOffset + Vector3.new(0, 4, 0)}):Play()
+			TweenService:Create(frame, tweenInfo, {BackgroundTransparency = 1}):Play()
+			TweenService:Create(tail, tweenInfo, {BackgroundTransparency = 1}):Play()
+			TweenService:Create(label, tweenInfo, {TextTransparency = 1}):Play()
+
+			task.wait(0.6)
+			bGui:Destroy() 
+		end
+	end)
+end
+
+-- 6. SEND & RECEIVE
+local function send()
+	if InputBox.Text ~= "" and InputBox.Text ~= " " then
+		Remote:FireServer(InputBox.Text)
+		InputBox.Text = ""
+	end
+end
+
+ToggleBtn.MouseButton1Click:Connect(function() ChatFrame.Visible = not ChatFrame.Visible end)
+SendBtn.MouseButton1Click:Connect(send)
+InputBox.FocusLost:Connect(function(enter) if enter then send() end end)
+
+Remote.OnClientEvent:Connect(function(sender, msg, userId)
+	-- Get Random Color
+	local nameColor = getPlayerColor(userId)
+	local hexColor = nameColor:ToHex()
+
+	-- BADGE LOGIC
+	local sPlayer = Players:GetPlayerByUserId(userId)
+	local badges = ""
+
+	if sPlayer then
+		-- Owner Check
+		local isOwner = false
+		if game.CreatorType == Enum.CreatorType.User and game.CreatorId == userId then
+			isOwner = true
+		elseif game.CreatorType == Enum.CreatorType.Group then
+			local success, rank = pcall(function() return sPlayer:GetRankInGroup(game.CreatorId) end)
+			if success and rank == 255 then isOwner = true end
+		end
+
+		if isOwner then badges = badges .. "🛠️" end
+		if sPlayer.HasVerifiedBadge then badges = badges .. "☑️" end
+		if badges ~= "" then badges = badges .. " " end
+	end
+
+	local label = Instance.new("TextLabel", Messages)
+	label.Text = string.format("%s<font color='#%s'><b>%s:</b></font> %s", badges, hexColor, sender, msg)
+	label.RichText = true
+	label.TextColor3 = Color3.new(1,1,1)
+	label.BackgroundTransparency = 1
+	label.TextSize = 14
+	label.Font = Enum.Font.Gotham
+	label.TextWrapped = true
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Size = UDim2.new(1,0,0,0)
+	label.AutomaticSize = Enum.AutomaticSize.Y
+	Messages.CanvasPosition = Vector2.new(0, 99999)
+	createBubble(sender, msg)
+end)
+
+UserInputService.InputBegan:Connect(function(io, p)
+	if not p and io.KeyCode == Enum.KeyCode.Slash then
+		task.wait()
+		InputBox:CaptureFocus()
+		ChatFrame.Visible = true
+	end
+end)
+
+-- 7. RENDER LOOP
+RunService.RenderStepped:Connect(function()
+	local camPos = Camera.CFrame.Position
+	local fov = Camera.FieldOfView
+	local viewportHeight = Camera.ViewportSize.Y
+
+	for userId, bubbles in pairs(activeBubbles) do
+		local player = Players:GetPlayerByUserId(userId)
+		if player and player.Character and player.Character:FindFirstChild("Head") then
+			local head = player.Character.Head
+			local distance = (camPos - head.Position).Magnitude
+
+			local mode = "FULL"
+			if distance > DIST_DOTS then mode = "HIDDEN"
+			elseif distance > DIST_FULL then mode = "DOTS" 
+			end
+
+			local frustumHeight = 2 * distance * math.tan(math.rad(fov)/2)
+			local studsPerPixel = frustumHeight / viewportHeight
+			local basePixelGap = 15
+			local currentStackHeight = math.max(2.2, basePixelGap * studsPerPixel)
+
+			for i = #bubbles, 1, -1 do
+				local bGui = bubbles[i]
+				local frame = bGui:FindFirstChild("Frame")
+				local label = frame and frame:FindFirstChild("TextLabel")
+
+				if frame and label then
+					if mode == "HIDDEN" then
+						bGui.Enabled = false
+					elseif mode == "DOTS" then
+						if i == #bubbles then 
+							bGui.Enabled = true
+							label.Text = "..."
+							bGui.Size = UDim2.new(0, 50, 0, 40) 
+						else
+							bGui.Enabled = false
+						end
+					else -- FULL
+						bGui.Enabled = true
+						label.Text = bGui:GetAttribute("FullText") or ""
+						local ow = bGui:GetAttribute("OriginalWidth") or 100
+						local oh = bGui:GetAttribute("OriginalHeight") or 50
+						bGui.Size = UDim2.new(0, ow, 0, oh)
+					end
+
+					if bGui.Enabled then
+						local pixelHeight = bGui.Size.Y.Offset + BUBBLE_PADDING_PX
+						local studHeight = pixelHeight * studsPerPixel
+
+						bGui.StudsOffset = Vector3.new(0, currentStackHeight + (studHeight/2), 0)
+						currentStackHeight = currentStackHeight + studHeight
+					end
+				end
+			end
+		end
+	end
+end)
