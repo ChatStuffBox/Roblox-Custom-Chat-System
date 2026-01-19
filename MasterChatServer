@@ -4,11 +4,11 @@ local TextService = game:GetService("TextService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
--- Wait for the Remote to exist (We will create it manually to avoid bugs)
+-- Wait for the Remote to exist 
 local Remote = ReplicatedStorage:WaitForChild("ChatLink_Secure", 10)
 
 if not Remote then
-	warn("⚠️ SERVER ERROR: You forgot to create the RemoteEvent in ReplicatedStorage!")
+	warn("SERVER ERROR: You forgot to create the RemoteEvent in ReplicatedStorage!")
 	-- Fallback: Create it if missing
 	Remote = Instance.new("RemoteEvent")
 	Remote.Name = "ChatLink_Secure"
