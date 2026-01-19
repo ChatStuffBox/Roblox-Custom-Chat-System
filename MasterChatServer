@@ -1,0 +1,32 @@
+-- SERVER SCRIPT (MasterChatServer)
+-- Place inside: ServerScriptService
+local TextService = game:GetService("TextService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+
+-- Wait for the Remote to exist (We will create it manually to avoid bugs)
+local Remote = ReplicatedStorage:WaitForChild("ChatLink_Secure", 10)
+
+if not Remote then
+	warn("⚠️ SERVER ERROR: You forgot to create the RemoteEvent in ReplicatedStorage!")
+	-- Fallback: Create it if missing
+	Remote = Instance.new("RemoteEvent")
+	Remote.Name = "ChatLink_Secure"
+	Remote.Parent = ReplicatedStorage
+end
+
+Remote.OnServerEvent:Connect(function(player, message)
+	if typeof(message) ~= "string" or #message == 0 then return end
+
+	-- Strict Filtering
+	local success, result = pcall(function()
+		return TextService:FilterStringAsync(message, player.UserId)
+	end)
+
+	if success then
+		local safeMessage = result:GetNonChatStringForBroadcastAsync()
+		Remote:FireAllClients(player.Name, safeMessage, player.UserId)
+	end
+end)
+
+print("✅ Server Chat System Ready")
