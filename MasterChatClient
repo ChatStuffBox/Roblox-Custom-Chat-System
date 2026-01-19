@@ -105,7 +105,7 @@ InputBox.Text = ""
 InputBox.PlaceholderText = "Click here or press / to chat"
 InputBox.TextXAlignment = Enum.TextXAlignment.Left
 
--- [FIX] DISABLE WRAPPING SO IT SCROLLS HORIZONTALLY
+-- This make it so the text in the text box don't get out of the box
 InputBox.TextWrapped = false 
 InputBox.ClipsDescendants = true
 InputBox.ClearTextOnFocus = false
@@ -204,7 +204,7 @@ local function createBubble(senderName, text)
 	scale.Scale = 0
 	TweenService:Create(scale, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Scale = 1}):Play()
 
-	-- EXIT ANIMATION (Float Up)
+	-- EXIT ANIMATION 
 	task.delay(6, function()
 		if bGui and bGui.Parent then 
 			local idx = table.find(activeBubbles[uid], bGui)
